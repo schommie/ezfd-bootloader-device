@@ -4,7 +4,7 @@
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::peripherals::*;
-use embassy_stm32::{Config, bind_interrupts, can, can::filter::*, flash, rcc};
+use embassy_stm32::{Config, bind_interrupts, can, can::filter::*, flash, rcc, uid};
 use embassy_time::Timer;
 use embedded_can::{ExtendedId, Id};
 use {defmt_rtt as _, panic_probe as _};
@@ -22,12 +22,34 @@ async fn main(_spawner: Spawner) {
         mode: rcc::HseMode::Oscillator,
     });
     config.rcc.mux.fdcan12sel = rcc::mux::Fdcansel::HSE;
-
     let peripherals = embassy_stm32::init(config);
+    let this_node = match uid::uid_hex() {
+        "001E005F3333510132313831" => CanDevices::Nuc1,
+        "004500243333510132313831" => CanDevices::Nuc2,
+        _ => CanDevices::UNKNOWN,
+    };
+    let target_id_mask = 0x1F << 21;
+    let filter_all = ExtendedFilter {
+        filter: FilterType::BitMask {
+            filter: 0x01 << 21,
+            mask: target_id_mask,
+        },
+        action: can::filter::Action::StoreInFifo0,
+    };
+    let filter_this_node = ExtendedFilter {
+        filter: FilterType::BitMask {
+            filter: (this_node as u32) << 21,
+            mask: target_id_mask,
+        },
+        action: can::filter::Action::StoreInFifo0,
+    };
 
     let mut can =
         can::CanConfigurator::new(peripherals.FDCAN1, peripherals.PA11, peripherals.PA12, Irqs);
-
+    can.properties()
+        .set_extended_filter(ExtendedFilterSlot::_0, filter_all);
+    can.properties()
+        .set_extended_filter(ExtendedFilterSlot::_1, filter_this_node);
     can.set_bitrate(1_000_000);
     can.set_fd_data_bitrate(5_000_000, true);
     let mut can = can.into_internal_loopback_mode();
@@ -100,8 +122,9 @@ enum BootloaderCommand {
 }
 enum CanDevices {
     RaspberryPi = 0x01,
-    NUC_1 = 0x06,
-    NUC_2 = 0x07,
+    Nuc1 = 0x06,
+    Nuc2 = 0x07,
+    UNKNOWN = 0x1F,
 }
 fn parse_can_id(raw_id: u32) -> DfrCanId {
     // raw_id (29 bits) = [priority 3b][target 5b][command 16b][source 5b]
