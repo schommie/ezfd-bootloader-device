@@ -1,0 +1,6 @@
+[toolchain]
+channel = "1.92"
+components = [ "rust-src", "rustfmt" ] # <- optionally add "llvm-tools-preview" for some extra features like "cargo size"
+targets = [
+    "thumbv8m.main-none-eabihf"
+]
