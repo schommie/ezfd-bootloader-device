@@ -97,4 +97,4 @@ See **[USER_APP_SETUP.md](USER_APP_SETUP.md)** for the required linker script an
 
 - [ ] **TUI** — Make a nice terminal-based user interface for flashing and interacting with the bootloader.
 
-- [ ] **Size Reduction** — Reduce binary size without compromising functionality. I think it can get down to sub 16 kB.
+- [x] **Size Reduction** — Reduce binary size without compromising functionality. I ~~think~~ know it can get down to sub 16 kB. It is now only 12 KiB in production!
