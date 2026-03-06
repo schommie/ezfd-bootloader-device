@@ -2,6 +2,8 @@
 
 A CAN FD bootloader for STM32H5 microcontrollers written in Rust using the [Embassy](https://embassy.dev) async embedded framework. It enables remote firmware updates over a CAN FD bus without requiring a physical connection to the device.
 
+> **Warning:** This project is experimental and not ready for production use. It lacks security features such as firmware authentication, encrypted transfer, rollback protection, and write-protect mechanisms. Do not deploy on safety-critical or production systems.
+
 ## How It Works
 
 On startup, the bootloader reads the MCU's unique ID to determine its node identity, configures FDCAN with extended 29-bit IDs, and waits for commands from a host (e.g. a Raspberry Pi). Once a full firmware image has been erased, written, and verified, the host sends a `Jump` command and the bootloader hands off execution to the user application at `0x08008000`.
@@ -54,14 +56,23 @@ Host                          Device
 Requires Rust with the `thumbv8m.main-none-eabihf` target and [probe-rs](https://probe.rs) with a compatible debug probe.
 
 ```bash
-# Build
+# Build (debug)
 cargo build
 
-# Flash and run (via probe-rs)
+# Build (release) — smaller binary, LTO enabled
+cargo build --release
+
+# Flash and run with RTT logging attached (debug)
 cargo run
+
+# Flash and run with RTT logging attached (release)
+cargo run --release
+
+# Flash only, without attaching RTT (useful for production deployment)
+probe-rs download --chip STM32H533RETx target/thumbv8m.main-none-eabihf/release/ezfdbootloader-device
 ```
 
-RTT logs are printed over the debug probe connection and viewable in the probe-rs terminal or any RTT client.
+RTT logs are printed over the debug probe connection when using `cargo run`. They are not available when flashing with `probe-rs download` alone.
 
 ## Configuring Your User Application
 
