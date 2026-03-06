@@ -3,6 +3,3 @@ runner = 'probe-rs run --chip STM32H533RETx'
 
 [build]
 target = "thumbv8m.main-none-eabihf"
-
-[env]
-DEFMT_LOG = "trace"

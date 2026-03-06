@@ -4,7 +4,6 @@
 mod protocol;
 use protocol::*;
 
-use rtt_target::rprintln;
 use embassy_executor::Spawner;
 use embassy_stm32::peripherals::*;
 use embassy_stm32::{Config, bind_interrupts, can, can::filter::*, flash, rcc};
@@ -16,6 +15,13 @@ use core::num::{NonZeroU16, NonZeroU8};
 use embedded_can::Id;
 use panic_halt as _;
 
+macro_rules! log {
+    ($($arg:tt)*) => {{
+        #[cfg(debug_assertions)]
+        rtt_target::rprintln!($($arg)*);
+    }};
+}
+
 bind_interrupts!(struct Irqs {
     FDCAN2_IT0 => can::IT0InterruptHandler<FDCAN2>;
     FDCAN2_IT1 => can::IT1InterruptHandler<FDCAN2>;
@@ -23,6 +29,7 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
+    #[cfg(debug_assertions)]
     rtt_target::rtt_init_print!();
 
     let mut config = Config::default();
@@ -55,18 +62,17 @@ async fn main(_spawner: Spawner) {
         )
     };
 
-    // Use these words for matching
     let this_node = match (w0, w1, w2) {
         (0x001E005F, 0x33335101, 0x32313831) => {
-            rprintln!("Detected Nuc1 UID");
+            log!("Detected Nuc1 UID");
             CanDevices::Nuc1
         }
         (0x00450024, 0x33335101, 0x32313831) => {
-            rprintln!("Detected Nuc2 UID");
+            log!("Detected Nuc2 UID");
             CanDevices::Nuc2
         }
         _ => {
-            rprintln!("Unknown UID, assuming Nuc1");
+            log!("Unknown UID, assuming Nuc1");
             CanDevices::UNKNOWN
         }
     };
@@ -86,7 +92,6 @@ async fn main(_spawner: Spawner) {
         },
         action: can::filter::Action::StoreInFifo0,
     };
-    //THIS IS THE ISSSUEE WHYYYYYYYYYYYY
     let mut can =
         can::CanConfigurator::new(peripherals.FDCAN2, peripherals.PB12, peripherals.PB13, Irqs);
     can.properties()
@@ -120,7 +125,7 @@ async fn main(_spawner: Spawner) {
     #[allow(unused_mut)]
     let mut can = can.into_normal_mode();
     let (mut tx, mut rx, _props) = can.split();
-    rprintln!("CAN up and running, waiting for messages");
+    log!("CAN up and running, waiting for messages");
     #[allow(unused_mut)]
     let mut flash = flash::Flash::new_blocking(peripherals.FLASH).into_blocking_regions();
 
@@ -139,7 +144,7 @@ async fn main(_spawner: Spawner) {
                 if let Id::Extended(id) = rx_frame.id() {
                     let raw_id = id.as_raw();
                     let can_msg = parse_can_id(raw_id);
-                    rprintln!("CAN msg: target={:X} command={:X}", can_msg.target, can_msg.command);
+                    log!("CAN msg: target={:X} command={:X}", can_msg.target, can_msg.command);
                     if can_msg.target == this_node_id {
                         /* this is a command for us! */
                         let data = rx_frame.data();
@@ -147,11 +152,11 @@ async fn main(_spawner: Spawner) {
                         if let Ok(command) = BootloaderCommand::try_from(can_msg.command) {
                             match command {
                                 BootloaderCommand::Ping => {
-                                    rprintln!("Command Ping {:X} received", BootloaderCommand::Ping as u16);
+                                    log!("Command Ping {:X} received", BootloaderCommand::Ping as u16);
                                 }
                                 BootloaderCommand::Erase => {
                                     f.blocking_erase(0x8000, 0x80000).unwrap();
-                                    rprintln!("Erase Complete");
+                                    log!("Erase Complete");
                                     let reply_id = DfrCanId::new(
                                         1,
                                         can_msg.source,
@@ -160,19 +165,18 @@ async fn main(_spawner: Spawner) {
                                     ).unwrap();
                                     let tx_frame = embassy_stm32::can::frame::FdFrame::new_extended(reply_id.to_raw_id(), &[]).unwrap();
                                     tx.write_fd(&tx_frame).await;
-                                    rprintln!("Sent EraseOk ACK");
+                                    log!("Sent EraseOk ACK");
                                 }
                                 BootloaderCommand::AddressAndSize => {
                                     if data.len() >= 5 {
                                         chunk_address = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                                         chunk_size = data[4];
-                                        rprintln!("Prepared for Write at 0x{:08X} (Size: {})", chunk_address, chunk_size);
+                                        log!("Prepared for Write at 0x{:08X} (Size: {})", chunk_address, chunk_size);
                                     }
                                 }
                                 BootloaderCommand::Write => {
                                     if chunk_address >= 0x0800_8000 {
                                         let offset = chunk_address - 0x0800_0000;
-
 
                                         let mut write_buf = [0xFF; 64];
 
@@ -183,7 +187,7 @@ async fn main(_spawner: Spawner) {
                                             write_buf[..data.len()].copy_from_slice(data);
 
                                             f.blocking_write(offset, &write_buf[..aligned_len]).unwrap();
-                                            rprintln!("Wrote {} bytes (padded to {}) to {:x}", data.len(), aligned_len, chunk_address);
+                                            log!("Wrote {} bytes (padded to {}) to {:x}", data.len(), aligned_len, chunk_address);
 
                                             let mut payload = [0u8; 5];
                                             payload[0..4].copy_from_slice(&chunk_address.to_be_bytes());
@@ -199,14 +203,14 @@ async fn main(_spawner: Spawner) {
                                             let tx_frame = embassy_stm32::can::frame::FdFrame::new_extended(reply_id.to_raw_id(), &payload).unwrap();
                                             tx.write_fd(&tx_frame).await;
 
-                                            rprintln!("Sent WriteOk ACK for 0x{:08X}", chunk_address);
+                                            log!("Sent WriteOk ACK for 0x{:08X}", chunk_address);
 
                                             chunk_address += data.len() as u32;
                                         }
                                     }
                                 }
                                 BootloaderCommand::Jump => {
-                                    rprintln!("Jumping to application at 0x{:08X}", 0x0800_8000u32);
+                                    log!("Jumping to application at 0x{:08X}", 0x0800_8000u32);
                                     unsafe {
                                         let mut p = cortex_m::Peripherals::steal();
 
@@ -235,15 +239,15 @@ async fn main(_spawner: Spawner) {
                                         cortex_m::asm::bootload(0x0800_8000 as *const u32);
                                     }
                                 }
-                                _ => rprintln!("Unhandled command 0x{:04X}", can_msg.command),
+                                _ => log!("Unhandled command 0x{:04X}", can_msg.command),
                             }
                         } else {
-                            rprintln!("Unknown command ID 0x{:x}", raw_id);
+                            log!("Unknown command ID 0x{:x}", raw_id);
                         }
                     }
                 }
             }
-            Err(e) => rprintln!("CAN read error: {:?}", e),
+            Err(e) => log!("CAN read error: {:?}", e),
         }
     }
 }

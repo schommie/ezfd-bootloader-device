@@ -56,23 +56,15 @@ Host                          Device
 Requires Rust with the `thumbv8m.main-none-eabihf` target and [probe-rs](https://probe.rs) with a compatible debug probe.
 
 ```bash
-# Build (debug)
-cargo build
-
-# Build (release) — smaller binary, LTO enabled
-cargo build --release
-
 # Flash and run with RTT logging attached (debug)
 cargo run
 
-# Flash and run with RTT logging attached (release)
-cargo run --release
-
-# Flash only, without attaching RTT (useful for production deployment)
+# Flash only, without RTT — optimized release binary for deployment
+cargo build --release
 probe-rs download --chip STM32H533RETx target/thumbv8m.main-none-eabihf/release/ezfdbootloader-device
 ```
 
-RTT logs are printed over the debug probe connection when using `cargo run`. They are not available when flashing with `probe-rs download` alone.
+RTT logs are only available in debug builds (`cargo run`). The release build strips all logging to reduce binary size — use `probe-rs download` to flash it without attaching RTT.
 
 ## Configuring Your User Application
 
